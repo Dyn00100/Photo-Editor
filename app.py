@@ -1,38 +1,42 @@
 import streamlit as st
 import cv2
 import numpy as np
-from PIL import Image
 
-st.title("Duyen’s Portrait Studio ✨")
-st.write("Upload a portrait to apply a soft, warm professional edit.")
+def apply_white_balance(img):
+    # Step 3: White Balance (Gray World Algorithm)
+    result = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    avg_a = np.average(result[:, :, 1])
+    avg_b = np.average(result[:, :, 2])
+    result[:, :, 1] = result[:, :, 1] - ((avg_a - 128) * (result[:, :, 0] / 255.0) * 1.1)
+    result[:, :, 2] = result[:, :, 2] - ((avg_b - 128) * (result[:, :, 0] / 255.0) * 1.1)
+    return cv2.cvtColor(result, cv2.COLOR_LAB2BGR)
 
-# 1. The Upload Button
-uploaded_file = st.file_uploader("Choose a portrait photo...", type=["jpg", "jpeg", "png"])
+st.title("Duyen’s Pro Portrait Studio")
 
-if uploaded_file is not None:
-    # Convert the file to an OpenCV image
+uploaded_file = st.file_uploader("Upload photo", type=["jpg", "png"])
+
+if uploaded_file:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
 
-    # 2. The "Portrait Magic" Logic
-    # Soften skin (Bilateral Filter)
-    smoothed = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
+    # Step 1: Identify the Subject (Face)
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+
+    # Step 2: Smooth Face Only
+    for (x, y, w, h) in faces:
+        face_roi = img[y:y+h, x:x+w]
+        # Smoothing just the detected rectangle
+        blurred_face = cv2.bilateralFilter(face_roi, 9, 75, 75)
+        img[y:y+h, x:x+w] = blurred_face
+
+    # Step 3: Apply White Balance
+    final_img = apply_white_balance(img)
+
+    # Show result
+    st.image(cv2.cvtColor(final_img, cv2.COLOR_BGR2RGB), use_container_width=True)
     
-    # Add Warmth
-    # Creating a peach/orange tint
-    warm_layer = np.full(smoothed.shape, (150, 180, 230), dtype=np.uint8) 
-    final_img = cv2.addWeighted(smoothed, 0.85, warm_layer, 0.15, 0)
-
-    # 3. Show the Results
-    # Convert BGR back to RGB for the website to show it correctly
-    display_img = cv2.cvtColor(final_img, cv2.COLOR_BGR2RGB)
-    st.image(display_img, caption="Your Professional Portrait", use_container_width=True)
-
-    # 4. The Download Button
+    # Download button
     _, buffer = cv2.imencode('.png', final_img)
-    st.download_button(
-        label="Download Edited Photo",
-        data=buffer.tobytes(),
-        file_name="duyen_portrait.png",
-        mime="image/png"
-    )
+    st.download_button("Download Photo", data=buffer.tobytes(), file_name="edited.png")
